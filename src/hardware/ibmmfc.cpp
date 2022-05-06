@@ -9,12 +9,11 @@
 
 #include <cstring>
 
-#define FMGEN_FREQ 11800000uL
-#define FMCLK (FMGEN_FREQ/3)
-#define CPU_FREQ (FMGEN_FREQ/2)
-#define TMRCLK_A 500000uL
-#define TMRCLK_B 2000000uL
-#define TMRA_PRESC (TMRCLK_B/TMRCLK_A)
+#define FMCLK		4000000uL
+#define CPU_FREQ	(11800000uL/2)
+#define TMRCLK_A	(FMCLK/8)
+#define TMRCLK_B	(FMCLK/2)
+#define TMRA_PRESC	(TMRCLK_B/TMRCLK_A)
 
 static FM::OPP fmchip;
 static Z80EX_CONTEXT *fmcpu;
