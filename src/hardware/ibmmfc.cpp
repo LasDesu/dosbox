@@ -13,8 +13,9 @@
 
 #define FMCLK		4000000uL
 #define CPU_FREQ	(11800000uL/2)
-#define TMRCLK_A	(FMCLK/8)
-#define TMRCLK_B	(FMCLK/2)
+#define TMRCLK		2000000uL
+#define TMRCLK_A	(TMRCLK/4)
+#define TMRCLK_B	(TMRCLK/1)
 #define TMRA_PRESC	(TMRCLK_B/TMRCLK_A)
 
 static FM::OPP fmchip;
@@ -123,95 +124,106 @@ static Bit8u uart_read( unsigned addr )
 	return val;
 }
 
-static struct
+static struct pitstate
 {
 	Bit8u mode;
 	unsigned latch;
-	int byte;
+	int state;
 } pit[3];
+static float timera_period, timerb_period;
 
-static int tclks_per_sample;
-static int timera_count;
-static long long timerb_count;
+static void timera_event( Bitu /*val*/ )
+{//fprintf(stderr,"%s %u\n",__FUNCTION__,__LINE__);
+	if ( pc_tcr & 0x04 )
+	{
+		pc_timers_irq |= 1;
+		update_irq();
+	}
+	PIC_AddEvent( timera_event, timera_period );
+}
+
+static void timerb_event( Bitu /*val*/ )
+{//fprintf(stderr,"%s %u\n",__FUNCTION__,__LINE__);
+	if ( pc_tcr & 0x08 )
+	{
+		pc_timers_irq |= 2;
+		update_irq();
+	}
+	PIC_AddEvent( timerb_event, timerb_period );
+}
 
 static void pit_write( unsigned addr, Bit8u val )
-{
+{//fprintf(stderr,"%s %u %x %x\n",__FUNCTION__,__LINE__,addr,val);
 	if ( addr == 3 )
 	{
 		if ( (val & 0xD) != 0x4 )
 			fprintf(stderr,"%s %u: unsupported timer mode %x\n",__FUNCTION__,__LINE__,val);
 		pit[val >> 6].mode = val & 0x3F;
-		pit[val >> 6].byte = val & 0x10 ? 0 : 1;
+		pit[val >> 6].state = ((val & 0x30) == 0x30) ? 1 : 2;
+		PIC_RemoveEvents( (val >> 6) ? timerb_event : timera_event );
 	}
 	else
 	{
-		if ( pit[addr].byte )
+		struct pitstate *p = &pit[addr];
+		
+		if ( (p->mode & 0x30) == 0x30 )
 		{
-			pit[addr].latch &= 0x00FF;
-			pit[addr].latch |= val << 8;
+			if ( p->state & 1 )
+			{
+				p->latch &= 0xFF00;
+				p->latch |= val;
+			}
+			else
+			{
+				p->latch &= 0x00FF;
+				p->latch |= val << 8;
+			}
 		}
 		else
 		{
-			pit[addr].latch &= 0xFF00;
-			pit[addr].latch |= val;
+			if ( p->mode & 0x20 )
+			{
+				p->latch &= 0x00FF;
+				p->latch |= val << 8;
+			}
+			else
+			{
+				p->latch &= 0xFF00;
+				p->latch |= val;
+			}
 		}
-fprintf(stderr,"%s %u: %u %x\n",__FUNCTION__,__LINE__,addr,pit[addr].latch);
-		if ( pit[addr].mode & 0x20 )
-			pit[addr].byte = !pit[addr].byte;
+		p->state ++;
+
+		if ( p->state > 5 )
+			p->state = 4;
 		
 		if ( addr == 0 )
-			timera_count = 0;
-		else
-			timerb_count = 0;
+		{
+			if ( p->state == 3 )
+			{
+				long val = p->latch ? p->latch : 0x10000;
+				timera_period = 1000.0f / TMRCLK_A * val;
+				//fprintf(stderr,"%s %u %ld %g\n",__FUNCTION__,__LINE__,val,timera_period);
+				p->state = 4;
+				PIC_AddEvent( timera_event, timera_period );
+			}
+		}
+		else if ( pit[1].state == 3 && pit[2].state == 3 )
+		{
+			long long val;
+			val = pit[1].latch ? pit[1].latch : 0x10000;
+			val *= pit[2].latch ? pit[2].latch : 0x10000;
+			timerb_period = 1000.0f / TMRCLK_B * val;
+			//fprintf(stderr,"%s %u %ld\n",__FUNCTION__,__LINE__,val);
+			pit[1].state = pit[2].state = 4;
+			PIC_AddEvent( timerb_event, timerb_period );
+		}
 	}
 }
 
 static Bit8u pit_read( unsigned addr )
 {
 	return 0;
-}
-
-static void process_timers( Bitu len )
-{
-	static int ta_presc;
-	unsigned tb_clks = len * tclks_per_sample;
-	unsigned ta_clks = 0;
-	
-	ta_presc += tb_clks;
-	if ( ta_presc >= TMRA_PRESC )
-	{
-		ta_clks = ta_presc / TMRA_PRESC;
-		ta_presc %= TMRA_PRESC;
-	}
-	ta_clks = tb_clks;
-	
-	if ( ta_clks > 0 )
-	{//fprintf(stderr,"%s %u %x %x\n",__FUNCTION__,__LINE__,timera_count,ta_clks);
-		timera_count -= ta_clks;
-		while ( timera_count <= 0 )
-		{//fprintf(stderr,"%s %u %d\n",__FUNCTION__,__LINE__,timera_count);
-			timera_count += pit[0].latch ? pit[0].latch : 0x10000;
-			if ( pc_tcr & 0x04 ) 
-				pc_timers_irq |= 1;
-		}//fprintf(stderr,"%s %u %d\n",__FUNCTION__,__LINE__,timera_count);
-	}
-	
-	if ( tb_clks > 0 )
-	{
-		timerb_count -= tb_clks;
-		while ( timerb_count <= 0 )
-		{
-			long long tb_val;
-			tb_val = pit[1].latch ? pit[1].latch : 0x10000;
-			tb_val *= pit[2].latch ? pit[2].latch : 0x10000;
-			
-			timerb_count += tb_val;
-			if ( pc_tcr & 0x08 ) 
-				pc_timers_irq |= 2;
-		}
-	}
-	
-	update_irq();
 }
 
 class PIUbridge
@@ -440,8 +452,6 @@ static void IBMMFC_CallBack( Bitu len )
 	opp_process();
 	if ( chan )
 		chan->AddSamples_s16( len, (Bit16s*)MixTemp );
-
-	process_timers( len );
 }
 
 static void write_imfc( Bitu port, Bitu val, Bitu /* iolen */ )
@@ -531,21 +541,6 @@ static Bitu read_imfc( Bitu port, Bitu /* iolen */ )
 	return retval;
 }
 
-#define MOUSE_DELAY 5.0
-
-static void MOUSE_Limit_Events(Bitu /*val*/)
-{
-	fprintf(stderr,"%s %u\n",__FUNCTION__,__LINE__);
-	/*mouse.timer_in_progress = false;
-	if ( mouse.events )
-	{
-		mouse.timer_in_progress = true;
-		PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
-		PIC_ActivateIRQ(MOUSE_IRQ);
-	}*/
-	PIC_ActivateIRQ( imfcIrq );
-}
-
 static void update_irq()
 {
 	static Bit8u cur_lvl = 0;
@@ -584,7 +579,6 @@ public:
 		if ( sampleRate < 8000 )
 			sampleRate = 8000;
 		tst_per_sample = CPU_FREQ / sampleRate;
-		tclks_per_sample = TMRCLK_B / sampleRate;
 
 		chan = MixerChan.Install( &IBMMFC_CallBack, sampleRate, "IBMMFC" );
 		chan->SetScale( 2.0f );
