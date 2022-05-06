@@ -686,7 +686,6 @@ void DOSBOX_Init(void) {
 	Pint->Set_values(imfcrates);
 	Pint->Set_help("Sample rate of IBM Music Feature Card emulation.");
 	Pstring = secprop->Add_path("imfcrom",Property::Changeable::WhenIdle,"IMFC.BIN");
-	Pstring->Set_values(devices);
 	Pstring->Set_help("ROM image for IBM Music Feature Card.");
 
 	secprop=control->AddSection_prop("joystick",&BIOS_Init,false);//done

@@ -3,11 +3,13 @@
 #include "inout.h"
 #include "pic.h"
 #include "setup.h"
+#include "cross.h"
 
 #include "fmgen/opp.h"
 #include "z80ex/include/z80ex.h"
 
 #include <cstring>
+#include <cerrno>
 
 #define FMCLK		4000000uL
 #define CPU_FREQ	(11800000uL/2)
@@ -584,13 +586,6 @@ public:
 		tst_per_sample = CPU_FREQ / sampleRate;
 		tclks_per_sample = TMRCLK_B / sampleRate;
 
-		FILE *fp = fopen( rompath->realpath.c_str(), "rb" );
-		if ( fp )
-		{
-			fread( rom, 1, sizeof(rom), fp );
-			fclose( fp );
-		}
-
 		chan = MixerChan.Install( &IBMMFC_CallBack, sampleRate, "IBMMFC" );
 		chan->SetScale( 2.0f );
 		
@@ -606,7 +601,23 @@ public:
 		fmcpu_int = 0;
 		pc_timers_irq = 0;
 
-		chan->Enable( true );
+		std::string path = rompath->realpath;
+		if ( !Cross::IsPathAbsolute(path) )
+		{
+			Cross::GetPlatformConfigDir(path);
+			path += rompath->realpath;
+		}
+
+		FILE *fp = fopen( path.c_str(), "rb" );
+		if ( fp )
+		{
+			fread( rom, 1, sizeof(rom), fp );
+			fclose( fp );
+			chan->Enable( true );
+		}
+		else
+			LOG_MSG("Failed to open IMFC ROM image '%s': %s (%d)",
+				path.c_str(), strerror(errno), errno );
 	}
 	
 	~IBMMFC()
