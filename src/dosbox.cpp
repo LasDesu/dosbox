@@ -89,6 +89,7 @@ void PCSPEAKER_Init(Section*);
 void TANDYSOUND_Init(Section*);
 void DISNEY_Init(Section*);
 void SERIAL_Init(Section*);
+void IBMMFC_Init(Section*);
 
 
 #if C_IPX
@@ -397,12 +398,15 @@ void DOSBOX_Init(void) {
 	// Some frequently used option sets
 	const char *rates[] = {  "44100", "48000", "32000","22050", "16000", "11025", "8000", "49716", 0 };
 	const char *oplrates[] = {   "44100", "49716", "48000", "32000","22050", "16000", "11025", "8000", 0 };
+	const char *imfcrates[] = { "44100", "22050", "11025", 0 };
 	const char *ios[] = { "220", "240", "260", "280", "2a0", "2c0", "2e0", "300", 0 };
 	const char *irqssb[] = { "7", "5", "3", "9", "10", "11", "12", 0 };
 	const char *dmassb[] = { "1", "5", "0", "3", "6", "7", 0 };
 	const char *iosgus[] = { "240", "220", "260", "280", "2a0", "2c0", "2e0", "300", 0 };
 	const char *irqsgus[] = { "5", "3", "7", "9", "10", "11", "12", 0 };
 	const char *dmasgus[] = { "3", "0", "1", "5", "6", "7", 0 };
+	const char *iosimfc[] = { "2A20", "2A30", 0 };
+	const char *irqsimfc[] = { "3", "7", "6", "5", "4", "2", 0 };
 
 
 	/* Setup all the different modules making up DOSBox */
@@ -668,6 +672,22 @@ void DOSBOX_Init(void) {
 
 	Pbool = secprop->Add_bool("disney",Property::Changeable::WhenIdle,true);
 	Pbool->Set_help("Enable Disney Sound Source emulation. (Covox Voice Master and Speech Thing compatible).");
+	
+	secprop = control->AddSection_prop("ibmmfc",&IBMMFC_Init,true); //done
+	Pbool = secprop->Add_bool("ibmmfc",Property::Changeable::WhenIdle,false);
+	Pbool->Set_help("Enable the IBM Music Feature Card emulation.");
+	Phex = secprop->Add_hex("imfcbase",Property::Changeable::WhenIdle,0x2A20);
+	Phex->Set_values(iosimfc);
+	Phex->Set_help("The IO address of the IBM Music Feature Card emulation.");
+	Pint = secprop->Add_int("imfcirq",Property::Changeable::WhenIdle,3);
+	Pint->Set_values(irqsimfc);
+	Pint->Set_help("The IRQ number of the IBM Music Feature Card.");
+	Pint = secprop->Add_int("imfcrate",Property::Changeable::WhenIdle,44100);
+	Pint->Set_values(imfcrates);
+	Pint->Set_help("Sample rate of IBM Music Feature Card emulation.");
+	Pstring = secprop->Add_path("imfcrom",Property::Changeable::WhenIdle,"IMFC.BIN");
+	Pstring->Set_values(devices);
+	Pstring->Set_help("ROM image for IBM Music Feature Card.");
 
 	secprop=control->AddSection_prop("joystick",&BIOS_Init,false);//done
 	secprop->AddInitFunction(&INT10_Init);

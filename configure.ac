@@ -686,6 +686,8 @@ src/gui/Makefile
 src/hardware/Makefile
 src/hardware/mame/Makefile
 src/hardware/serialport/Makefile
+src/hardware/fmgen/Makefile
+src/hardware/z80ex/Makefile
 src/ints/Makefile
 src/libs/Makefile
 src/libs/zmbv/Makefile
